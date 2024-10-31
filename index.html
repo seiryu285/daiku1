@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>建築工程管理</title>
+  <script src="https://unpkg.com/react@17/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.4/moment.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.4/locale/ja.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/react-big-calendar@0.33.2/dist/react-big-calendar.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/react-big-calendar@0.33.2/lib/css/react-big-calendar.css">
+  <link href="https://unpkg.com/tailwindcss@^2/dist/tailwind.min.css" rel="stylesheet">
+  <style>
+    .progress-bar {
+      background-color: #e5e7eb;
+      border-radius: 0.25rem;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 0.5rem;
+      background-color: #3b82f6;
+    }
+    .rbc-calendar {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    .rbc-toolbar {
+      flex-wrap: wrap;
+      justify-content: center;
+      padding: 10px;
+    }
+    .rbc-toolbar-label {
+      flex-grow: 1;
+      text-align: center;
+      font-weight: bold;
+      font-size: 1.2em;
+      padding: 0 10px;
+    }
+    .rbc-btn-group {
+      margin: 5px;
+    }
+    .rbc-btn-group button {
+      background-color: #f3f4f6;
+      border: 1px solid #d1d5db;
+      color: #374151;
+      padding: 5px 10px;
+    }
+    .rbc-btn-group button:hover {
+      background-color: #e5e7eb;
+    }
+    .rbc-btn-group button.rbc-active {
+      background-color: #3b82f6;
+      color: white;
+    }
+    .rbc-event {
+      background-color: #3b82f6;
+      border: none;
+      border-radius: 3px;
+    }
+    .rbc-today {
+      background-color: #e5e7eb;
+    }
+    .rbc-off-range-bg {
+      background-color: #f3f4f6;
+    }
+    @media (max-width: 640px) {
+      .rbc-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .rbc-toolbar-label {
+        margin: 10px 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+    const { Calendar, momentLocalizer } = ReactBigCalendar;
+
+    moment.locale('ja');
+    const localizer = momentLocalizer(moment);
+
+    const initialProcesses = [
+      { id: 'foundation', name: '土台', days: 0, progress: 0, deadline: null, color: '#FF6B6B' },
+      { id: 'framing', name: '棟上げ', days: 0, progress: 0, deadline: null, color: '#4ECDC4' },
+      { id: 'base', name: '下地', days: 0, progress: 0, deadline: null, color: '#45B7D1' },
+      { id: 'floor', name: 'フロア', days: 0, progress: 0, deadline: null, color: '#FFA07A' },
+      { id: 'ceiling_base', name: '天井下地', days: 0, progress: 0, deadline: null, color: '#20B2AA' },
+      { id: 'ceiling', name: '天井', days: 0, progress: 0, deadline: null, color: '#778899' },
+      { id: 'stairs', name: '階段', days: 0, progress: 0, deadline: null, color: '#DDA0DD' },
+      { id: 'board', name: 'ボード', days: 0, progress: 0, deadline: null, color: '#F0E68C' },
+      { id: 'frame', name: '枠', days: 0, progress: 0, deadline: null, color: '#98FB98' },
+      { id: 'finish', name: '張りじまい', days: 0, progress: 0, deadline: null, color: '#DEB887' },
+      { id: 'shelf', name: '棚', days: 0, progress: 0, deadline: null, color: '#B0C4DE' },
+    ];
+
+    function App() {
+      const [processes, setProcesses] = useState(initialProcesses);
+      const [tsubo, setTsubo] = useState(0);
+      const [unitPrice, setUnitPrice] = useState(0);
+      const [schedule, setSchedule] = useState([]);
+      const [startDate, setStartDate] = useState(moment());
+      const [chatMessage, setChatMessage] = useState('');
+      const [chatHistory, setChatHistory] = useState([]);
+      const [activeTab, setActiveTab] = useState('dashboard');
+      const [view, setView] = useState('month');
+      const [date, setDate] = useState(new Date(2024, 9, 1));
+
+      useEffect(() => {
+        generateSchedule();
+      }, [processes, startDate]);
+
+      const handleDaysChange = (processId, days) => {
+        setProcesses(prevProcesses =>
+          prevProcesses.map(process =>
+            process.id === processId ? { ...process, days } : process
+          )
+        );
+      };
+
+      const handleProgressChange = (processId, progress) => {
+        setProcesses(prevProcesses =>
+          prevProcesses.map(process =>
+            process.id === processId ? { ...process, progress } : process
+          )
+        );
+      };
+
+      const handleDeadlineChange = (processId, deadlineStr) => {
+        const deadline = moment(deadlineStr);
+        setProcesses(prevProcesses =>
+          prevProcesses.map(process =>
+            process.id === processId ? { ...process, deadline: deadline.isValid() ? deadline : null } : process
+          )
+        );
+      };
+
+      const calculateTotalDays = () => {
+        return processes.reduce((total, process) => total + process.days, 0);
+      };
+
+      const calculateTotalCost = () => {
+        return (tsubo || 0) * (unitPrice || 0);
+      };
+
+      const calculateDailyRate = () => {
+        const totalDays = calculateTotalDays();
+        const totalCost = calculateTotalCost();
+        return totalDays > 0 ? Math.round(totalCost / totalDays) : 0;
+      };
+
+      const generateSchedule = () => {
+        let currentDate = startDate.clone();
+        const newSchedule = [];
+        processes.forEach(process => {
+          if (process.days > 0) {
+            const endDate = currentDate.clone().add(process.days, 'days');
+            newSchedule.push({
+              title: process.name,
+              start: currentDate.toDate(),
+              end: endDate.toDate(),
+              color: process.color
+            });
+            currentDate = endDate;
+          }
+        });
+        setSchedule(newSchedule);
+      };
+
+      const eventStyleGetter = (event) => {
+        return {
+          style: {
+            backgroundColor: event.color,
+            borderRadius: '3px',
+            opacity: 0.8,
+            color: 'black',
+            border: 'none',
+            display: 'block'
+          }
+        };
+      };
+
+      const handleChatSubmit = () => {
+        if (!chatMessage.trim()) return;
+        const newMessage = { role: 'user', content: chatMessage };
+        setChatHistory(prev => [...prev, newMessage]);
+        setChatMessage('');
+        setTimeout(() => {
+          const assistantResponse = { role: 'assistant', content: 'これは自動応答です。' };
+          setChatHistory(prev => [...prev, assistantResponse]);
+        }, 1000);
+      };
+
+      const CustomToolbar = ({ label, onNavigate, onView }) => (
+        <div className="rbc-toolbar">
+          <div className="rbc-btn-group">
+            <button onClick={() => onNavigate('TODAY')}>Today</button>
+            <button onClick={() => onNavigate('PREV')}>Back</button>
+            <button onClick={() => onNavigate('NEXT')}>Next</button>
+          </div>
+          <span className="rbc-toolbar-label">{label}</span>
+          <div className="rbc-btn-group">
+            <button onClick={() => onView('month')}>Month</button>
+            <button onClick={() => onView('week')}>Week</button>
+            <button onClick={() => onView('day')}>Day</button>
+            <button onClick={() => onView('agenda')}>Agenda</button>
+          </div>
+        </div>
+      );
+
+      return (
+        <div className="flex flex-col md:flex-row h-screen bg-gray-100">
+          <div className="w-full md:w-64 bg-white shadow-md">
+            <div className="p-4">
+              <h1 className="text-2xl font-bold mb-4">建築工程管理</h1>
+            </div>
+            <div className="flex flex-row md:flex-col w-full">
+              <button className={`flex-1 md:justify-start px-4 py-2 ${activeTab === 'dashboard' ? 'bg-gray-200' : ''}`} onClick={() => setActiveTab('dashboard')}>
+                ダッシュボード
+              </button>
+              <button className={`flex-1 md:justify-start px-4 py-2 ${activeTab === 'schedule' ? 'bg-gray-200' : ''}`} onClick={() => setActiveTab('schedule')}>
+                スケジュール
+              </button>
+              <button className={`flex-1 md:justify-start px-4 py-2 ${activeTab === 'progress' ? 'bg-gray-200' : ''}`} onClick={() => setActiveTab('progress')}>
+                進捗管理
+              </button>
+              <button className={`flex-1 md:justify-start px-4 py-2 ${activeTab === 'settings' ? 'bg-gray-200' : ''}`} onClick={() => setActiveTab('settings')}>
+                設定
+              </button>
+              <button className={`flex-1 md:justify-start px-4 py-2 ${activeTab === 'chat' ? 'bg-gray-200' : ''}`} onClick={() => setActiveTab('chat')}>
+                チャット
+              </button>
+            </div>
+          </div>
+          <div className="flex-1 p-4 md:p-8 overflow-auto">
+            {activeTab === 'dashboard' && (
+              <div>
+                <div className="bg-white shadow-md rounded p-4">
+                  <h2 className="text-xl font-bold mb-4">ダッシュボード</h2>
+                  <div className="bg-gray-100 p-4 rounded">
+                    <h3 className="text-lg font-bold mb-2">重要指標</h3>
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <span>総工期:</span>
+                        <span className="font-bold">{calculateTotalDays()} 日</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>総コスト:</span>
+                        <span className="font-bold">{calculateTotalCost().toLocaleString()} 円</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>1日あたりの単価:</span>
+                        <span className="font-bold">{calculateDailyRate().toLocaleString()} 円/日</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            {activeTab === 'schedule' && (
+              <div>
+                <div className="bg-white shadow-md rounded p-4">
+                  <h2 className="text-xl font-bold mb-4">工程スケジュール</h2>
+                  <div style={{ height: 'calc(100vh - 200px)' }}>
+                    <Calendar
+                      localizer={localizer}
+                      events={schedule}
+                      startAccessor="start"
+                      endAccessor="end"
+                      style={{ height: '100%' }}
+                      views={['month', 'week', 'day', 'agenda']}
+                      step={60}
+                      showMultiDayTimes
+                      eventPropGetter={eventStyleGetter}
+                      onView={setView}
+                      onNavigate={setDate}
+                      view={view}
+                      date={date}
+                      components={{
+                        toolbar: CustomToolbar,
+                      }}
+                      messages={{
+                        next: "次",
+                        previous: "前",
+                        today: "今日",
+                        month: "月",
+                        week: "週",
+                        day: "日",
+                        agenda: "予定",
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+            {activeTab === 'progress' && (
+              <div>
+                <div className="bg-white shadow-md rounded p-4">
+                  <h2 className="text-xl font-bold mb-4">進捗管理</h2>
+                  {processes.map((process) => (
+                    <div key={process.id} className="mb-4">
+                      <div className="flex justify-between items-center mb-2">
+                        <label>{process.name}</label>
+                        <div className="flex items-center">
+                          <input
+                            type="number"
+                            value={process.progress || ''}
+                            onChange={(e) => handleProgressChange(process.id, Number(e.target.value))}
+                            className="w-16 mr-2 border rounded px-2 py-1"
+                            min="0"
+                            max="100"
+                
+                          />
+                          <span>%</span>
+                        </div>
+                      </div>
+                      <div className="progress-bar">
+                        <div className="progress-bar-fill" style={{ width: `${process.progress}%`, backgroundColor: process.color }}></div>
+                      </div>
+                      <div className="flex justify-between items-center mt-2">
+                        <input
+                          type="date"
+                          value={process.deadline ? process.deadline.format('YYYY-MM-DD') : ''}
+                          onChange={(e) => handleDeadlineChange(process.id, e.target.value)}
+                          className="w-40 border rounded px-2 py-1"
+                        />
+                        {process.deadline && process.deadline.isValid() && process.deadline.isBefore(moment()) && process.progress < 100 && (
+                          <div className="flex items-center text-red-500">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            期限超過
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {activeTab === 'settings' && (
+              <div>
+                <div className="bg-white shadow-md rounded p-4">
+                  <h2 className="text-xl font-bold mb-4">工程設定</h2>
+                  <div className="space-y-4">
+                    {processes.map((process) => (
+                      <div key={process.id} className="flex items-center">
+                        <label className="w-1/3">{process.name}</label>
+                        <input
+                          type="number"
+                          value={process.days || ''}
+                          onChange={(e) => handleDaysChange(process.id, Number(e.target.value))}
+                          className="w-24 mr-2 border rounded px-2 py-1"
+                          min="0"
+                        />
+                        <span>日</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="bg-white shadow-md rounded p-4 mt-4">
+                  <h2 className="text-xl font-bold mb-4">その他の設定</h2>
+                  <div className="space-y-4">
+                    <div className="flex items-center">
+                      <label className="w-1/3">建坪</label>
+                      <input
+                        type="number"
+                        value={tsubo || ''}
+                        onChange={(e) => setTsubo(e.target.value === '' ? 0 : Number(e.target.value))}
+                        className="w-24 mr-2 border rounded px-2 py-1"
+                        min="0"
+                      />
+                      <span>坪</span>
+                    </div>
+                    <div className="flex items-center">
+                      <label className="w-1/3">請負単価</label>
+                      <input
+                        type="number"
+                        value={unitPrice || ''}
+                        onChange={(e) => setUnitPrice(e.target.value === '' ? 0 : Number(e.target.value))}
+                        className="w-24 mr-2 border rounded px-2 py-1"
+                        min="0"
+                      />
+                      <span>円/坪</span>
+                    </div>
+                    <div className="flex items-center">
+                      <label className="w-1/3">工事開始日</label>
+                      <input
+                        type="date"
+                        value={startDate.format('YYYY-MM-DD')}
+                        onChange={(e) => {
+                          const date = moment(e.target.value);
+                          setStartDate(date.isValid() ? date : moment());
+                        }}
+                        className="w-40 border rounded px-2 py-1"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            {activeTab === 'chat' && (
+              <div className="flex flex-col h-full">
+                <div className="bg-white shadow-md rounded p-4 flex-grow flex flex-col">
+                  <h2 className="text-xl font-bold mb-4">チャット</h2>
+                  <div className="flex-grow overflow-y-auto border rounded p-4 bg-gray-100">
+                    {chatHistory.map((msg, index) => (
+                      <div key={index} className={`mb-4 flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[70%] p-3 rounded-lg ${
+                          msg.role === 'user' 
+                            ? 'bg-green-500 text-white rounded-br-none' 
+                            : 'bg-white text-gray-800 rounded-bl-none'
+                        }`}>
+                          {msg.content}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex items-center mt-4">
+                    <input
+                      type="text"
+                      value={chatMessage}
+                      onChange={(e) => setChatMessage(e.target.value)}
+                      placeholder="メッセージを入力..."
+                      className="flex-grow mr-2 border rounded-full px-4 py-2"
+                    />
+                    <button onClick={handleChatSubmit} className="bg-blue-500 text-white px-4 py-2 rounded-full">
+                      送信
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.render(<App />, document.getElementById('root'));
+  </script>
+</body>
+</html>
+
