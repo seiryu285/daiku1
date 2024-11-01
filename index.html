@@ -36,6 +36,7 @@
       border: 1px solid #d1d5db;
       color: #374151;
       padding: 5px 10px;
+      cursor: pointer;
     }
     .rbc-btn-group button:hover {
       background-color: #e5e7eb;
@@ -54,6 +55,9 @@
     }
     .rbc-off-range-bg {
       background-color: #f3f4f6;
+    }
+    .unavailable-date {
+      background-color: #fee2e2;
     }
     @media (max-width: 640px) {
       .rbc-toolbar {
@@ -76,46 +80,48 @@
     const localizer = momentLocalizer(moment);
 
     const initialProcesses = [
-      { id: 'foundation', name: '土台', days: 0, color: '#FF6B6B' },
-      { id: 'framing', name: '棟上げ', days: 0, color: '#4ECDC4' },
-      { id: 'base', name: '下地', days: 0, color: '#45B7D1' },
-      { id: 'floor', name: 'フロア', days: 0, color: '#FFA07A' },
-      { id: 'ceiling_base', name: '天井下地', days: 0, color: '#20B2AA' },
-      { id: 'ceiling', name: '天井', days: 0, color: '#778899' },
-      { id: 'stairs', name: '階段', days: 0, color: '#DDA0DD' },
-      { id: 'board', name: 'ボード', days: 0, color: '#F0E68C' },
-      { id: 'frame', name: '枠', days: 0, color: '#98FB98' },
-      { id: 'finish', name: '張りじまい', days: 0, color: '#DEB887' },
-      { id: 'shelf', name: '棚', days: 0, color: '#B0C4DE' },
-      { id: 'other', name: 'その他', days: 0, color: '#D3D3D3' },
+      { id: 'foundation', name: '土台', days: '', color: '#FF6B6B' },
+      { id: 'framing', name: '棟上げ', days: '', color: '#4ECDC4' },
+      { id: 'base', name: '下地', days: '', color: '#45B7D1' },
+      { id: 'floor', name: 'フロア', days: '', color: '#FFA07A' },
+      { id: 'ceiling_base', name: '天井下地', days: '', color: '#20B2AA' },
+      { id: 'ceiling', name: '天井', days: '', color: '#778899' },
+      { id: 'stairs', name: '階段', days: '', color: '#DDA0DD' },
+      { id: 'board', name: 'ボード', days: '', color: '#F0E68C' },
+      { id: 'frame', name: '枠', days: '', color: '#98FB98' },
+      { id: 'finish', name: '張りじまい', days: '', color: '#DEB887' },
+      { id: 'shelf', name: '棚', days: '', color: '#B0C4DE' },
+      { id: 'other', name: 'その他', days: '', color: '#D3D3D3' },
     ];
 
     function App() {
       const [processes, setProcesses] = useState(initialProcesses);
-      const [tsubo, setTsubo] = useState(0);
-      const [unitPrice, setUnitPrice] = useState(0);
+      const [tsubo, setTsubo] = useState('');
+      const [unitPrice, setUnitPrice] = useState('');
       const [schedule, setSchedule] = useState([]);
       const [startDate, setStartDate] = useState(moment().startOf('month'));
       const [activeTab, setActiveTab] = useState('dashboard');
+      const [unavailableDates, setUnavailableDates] = useState([]);
 
       useEffect(() => {
         generateSchedule();
-      }, [processes, startDate]);
+      }, [processes, startDate, unavailableDates]);
 
-      const handleDaysChange = (processId, days) => {
+      const handleDaysChange = (processId, value) => {
+        // 入力値を文字列として保持
         setProcesses(prevProcesses =>
           prevProcesses.map(process =>
-            process.id === processId ? { ...process, days } : process
+            process.id === processId ? { ...process, days: value } : process
           )
         );
       };
 
       const calculateTotalDays = () => {
-        return processes.reduce((total, process) => total + process.days, 0);
+        return processes.reduce((total, process) => total + (parseFloat(process.days) || 0), 0);
       };
 
       const calculateTotalCost = () => {
-        return (tsubo || 0) * (unitPrice || 0);
+        return (parseFloat(tsubo) || 0) * (parseFloat(unitPrice) || 0);
       };
 
       const calculateDailyRate = () => {
@@ -127,19 +133,38 @@
       const generateSchedule = () => {
         let currentDate = startDate.clone();
         const newSchedule = [];
-        processes.forEach(process => {
-          if (process.days > 0) {
-            const endDate = currentDate.clone().add(process.days, 'days');
-            newSchedule.push({
-              title: process.name,
-              start: currentDate.toDate(),
-              end: endDate.toDate(),
-              color: process.color
-            });
-            currentDate = endDate;
+        const totalDays = calculateTotalDays();
+
+        // プロセスのコピーを作成し、remainingDaysを管理
+        const processQueue = processes.map(p => ({ ...p, remainingDays: parseFloat(p.days) || 0 }));
+
+        let remainingDays = totalDays;
+
+        while (remainingDays > 0) {
+          if (!isDateUnavailable(currentDate)) {
+            const process = processQueue.find(p => p.remainingDays > 0);
+            if (process) {
+              const endDate = currentDate.clone().add(1, 'day');
+              newSchedule.push({
+                title: process.name,
+                start: currentDate.toDate(),
+                end: endDate.toDate(),
+                color: process.color
+              });
+              // 1日分の工数を減らす。小数点以下は次の日に繰り越す
+              process.remainingDays -= 1.0;
+              remainingDays -= 1.0;
+            }
           }
-        });
+          currentDate.add(1, 'day');
+        }
         setSchedule(newSchedule);
+      };
+
+      const isDateUnavailable = (date) => {
+        return unavailableDates.some(unavailableDate => 
+          moment(unavailableDate).isSame(date, 'day')
+        );
       };
 
       const eventStyleGetter = (event) => {
@@ -153,6 +178,30 @@
             display: 'block'
           }
         };
+      };
+
+      const dayPropGetter = (date) => {
+        if (isDateUnavailable(date)) {
+          return {
+            className: 'unavailable-date',
+            style: {
+              cursor: 'not-allowed'
+            }
+          };
+        }
+        return {};
+      };
+
+      const handleSelectSlot = (slotInfo) => {
+        const selectedDate = moment(slotInfo.start);
+        setUnavailableDates(prevDates => {
+          const dateExists = prevDates.some(date => moment(date).isSame(selectedDate, 'day'));
+          if (dateExists) {
+            return prevDates.filter(date => !moment(date).isSame(selectedDate, 'day'));
+          } else {
+            return [...prevDates, selectedDate.toDate()];
+          }
+        });
       };
 
       const CustomToolbar = ({ label, onNavigate }) => (
@@ -212,6 +261,7 @@
               <div>
                 <div className="bg-white shadow-md rounded p-4">
                   <h2 className="text-xl font-bold mb-4">工程スケジュール</h2>
+                  <p className="mb-2">現場に入ることができない日をカレンダー上でタップして選択または解除してください。</p>
                   <div style={{ height: 'calc(100vh - 200px)' }}>
                     <Calendar
                       localizer={localizer}
@@ -222,7 +272,10 @@
                       views={['month']}
                       step={60}
                       showMultiDayTimes
+                      selectable
+                      onSelectSlot={handleSelectSlot}
                       eventPropGetter={eventStyleGetter}
+                      dayPropGetter={dayPropGetter}
                       onNavigate={(newDate) => setStartDate(moment(newDate).startOf('month'))}
                       date={startDate.toDate()}
                       components={{
@@ -243,12 +296,14 @@
                         <label className="w-1/3">{process.name}</label>
                         <input
                           type="number"
-                          value={process.days || ''}
-                          onChange={(e) => handleDaysChange(process.id, Number(e.target.value))}
+                          step="0.1"
+                          value={process.days}
+                          onChange={(e) => handleDaysChange(process.id, e.target.value)}
                           className="w-24 mr-2 border rounded px-2 py-1"
                           min="0"
+                          placeholder="工数"
                         />
-                        <span>工数</span>
+                        {/* <span>工数</span> を削除 */}
                       </div>
                     ))}
                   </div>
@@ -260,10 +315,12 @@
                       <label className="w-1/3">建坪</label>
                       <input
                         type="number"
-                        value={tsubo || ''}
-                        onChange={(e) => setTsubo(e.target.value === '' ? 0 : Number(e.target.value))}
+                        step="0.1"
+                        value={tsubo}
+                        onChange={(e) => setTsubo(e.target.value)}
                         className="w-24 mr-2 border rounded px-2 py-1"
                         min="0"
+                        placeholder="坪"
                       />
                       <span>坪</span>
                     </div>
@@ -271,10 +328,12 @@
                       <label className="w-1/3">請負単価</label>
                       <input
                         type="number"
-                        value={unitPrice || ''}
-                        onChange={(e) => setUnitPrice(e.target.value === '' ? 0 : Number(e.target.value))}
+                        step="0.1"
+                        value={unitPrice}
+                        onChange={(e) => setUnitPrice(e.target.value)}
                         className="w-24 mr-2 border rounded px-2 py-1"
                         min="0"
+                        placeholder="円/坪"
                       />
                       <span>円/坪</span>
                     </div>
